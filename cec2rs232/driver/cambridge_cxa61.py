@@ -5,9 +5,8 @@ from .base_ir import IrDeviceMixin
 from .base import AbstractDevice
 from .registry import driver
 
-
+# Serial protocol constants
 # https://techsupport.cambridgeaudio.com/hc/en-us/article_attachments/360011247357/AP366462_CXA61_CXA81_Serial_Control_Protocol__1_.pdf
-
 
 GROUP_ERROR = 0
 GROUP_AMP_CMD = 1
@@ -42,6 +41,7 @@ AMP_CMD_GET_VOL = 5
 AMP_CMD_VOL_UP = 6
 AMP_CMD_VOL_DN = 7
 
+# Serial message
 class cambridge_cxa61_data (object):
 
     pattern = re.compile("#([0-9]{2}),([0-9]{2})(?:,([0-9]{1,2})?)\r")
@@ -81,21 +81,61 @@ class cambridge_cxa61_data (object):
         return self._data
 
 
+# IR config
+CXA61_IR_CONFIG = {
+  "formats": [
+    {
+      "preamble": [1],
+      "coding": "manchester",
+      "zero": [1, 0],
+      "one": [0, 1],
+      "msb_first": True,
+      "bits": 13,
+      "timebase": 890,
+      "gap": 89000,
+      "carrier": 38000
+    },
+    {
+      "coding": "ppm",
+      "zero": [1, 1],
+      "one": [2, 1],
+      "bits": 7,
+      "postamble": [1, 2, 2, 1, 1, 1, 1, 1, 1],
+      "timebase": 890,
+      "carrier": 38000
+    }
+  ],
+  "keys": {
+    "power": "B2 78",
+    "volume_up": {
+      "format": 1,
+      "data": "08"
+    },
+    "volume_down": "A0 88",
+    "mute": "A0 68",
+    "d2": "61 50"
+  }
+}
+
+
 @driver("cambridge_cxa61")
 class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
 
-    def __init__(self, serial_port, lirc_device):
-        self.serial_init(serial_port, baudrate=9600, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
-        self.ir_init(lirc_device)
+    def __init__(self, serial_port, ir_gpio_pin):
+        # self.serial_init(serial_port, baudrate=9600, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
+        self.ir_init(CXA61_IR_CONFIG, ir_gpio_pin)
+
+    def serial_send(self, *args):
+        pass
 
     def get_name(self):
-        return "Cambridge Audio CXA61/81"
+        return "CXA61/81"
 
     def volume_up(self):
-        self.ir_send("KEY_VOLUMEUP")
+        self.ir_send("volume_up")
 
     def volume_down(self):
-        self.ir_send("KEY_VOLUMEDOWN")
+        self.ir_send("volume_down")
 
     def mute_on(self):
         self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_MUT, 1).serialize())

@@ -1,17 +1,18 @@
-import lirc
+import piir
 from .base import AbstractDevice
 
 
 class IrDeviceMixin (object):
 
-    def ir_init(self, device):
-        self._device = device
-        self._ir = lirc.Client()
+    def ir_init(self, config, gpio_pin):
+        self._ir = piir.Remote(config, gpio_pin)
 
     def ir_send(self, command):
-        self._ir.send_once(self._device, command)
+        print(f"send {command}")
+        res = self._ir.send(command)
+        print(f"ok: {res}")
 
 
 class AbstractIrDevice (IrDeviceMixin, AbstractDevice):
-    def __init__(self, device, **kwargs):
-        super().__init__(device)
+    def __init__(self, config, gpio_pin):
+        super().__init__(config, gpio_pin)

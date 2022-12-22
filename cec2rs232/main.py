@@ -3,7 +3,6 @@ import logging
 import asyncio
 import time
 import socket
-import lirc
 from pycec import cec, const, commands
 from .driver.cambridge_cxa61 import cambridge_cxa61
 
@@ -24,8 +23,6 @@ class cec2rs232:
         self._adapter.set_command_callback(self._handle_command)
         self._address = None
         self._power = False
-
-        self._client = lirc.Client()
         
     def _init_callback(self, *args, **kwargs):
         self._address = self._adapter.get_logical_address()
@@ -73,11 +70,14 @@ class cec2rs232:
     
     def run(self):
         task = self._adapter.init(self._init_callback)
-        self._loop.run_forever()
+        try:
+            self._loop.run_forever()
+        except Exception as e:
+            logging.exception(e)
         self._loop.close()
 
 def main():
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
-    driver = cambridge_cxa61("/dev/ttyUSB0", "cxa61")
+    driver = cambridge_cxa61("/dev/ttyUSB0", 4)
     cec2rs232(driver).run()

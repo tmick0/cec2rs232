@@ -1,10 +1,10 @@
 import argparse
 import logging
 import asyncio
-import time
-import socket
+import json
 from pycec import cec, const, commands
 from .driver.cambridge_cxa61 import cambridge_cxa61
+from .driver.registry import driver_registry
 
 logging.basicConfig(level=logging.INFO)
 
@@ -78,6 +78,11 @@ class cec2rs232:
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('config_file', default='/etc/cec2rs232/cec2rs232.json')
     args = parser.parse_args()
-    driver = cambridge_cxa61("/dev/ttyUSB0", 4)
+
+    with open(args.config_file, 'r') as fh:
+        config = json.load(fh)
+    
+    driver = driver_registry[config["device"]](**config["parameters"])
     cec2rs232(driver).run()

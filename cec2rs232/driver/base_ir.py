@@ -3,14 +3,11 @@ from .base import AbstractDevice
 
 
 class IrDeviceMixin (object):
-
     def ir_init(self, config, gpio_pin):
         self._ir = piir.Remote(config, gpio_pin)
 
     def ir_send(self, command):
-        print(f"send {command}")
         res = self._ir.send(command)
-        print(f"ok: {res}")
 
 
 class AbstractIrDevice (IrDeviceMixin, AbstractDevice):

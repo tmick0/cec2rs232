@@ -3,7 +3,6 @@ from .base import AbstractDevice
 
 
 class SerialDeviceMixin (object):
-
     def serial_init(self, device, **kwargs):
         self._serial = serial.Serial(device, **kwargs)
 

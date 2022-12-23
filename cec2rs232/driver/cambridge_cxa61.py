@@ -41,6 +41,25 @@ AMP_CMD_GET_VOL = 5
 AMP_CMD_VOL_UP = 6
 AMP_CMD_VOL_DN = 7
 
+SRC_CMD_GET_SRC = 1
+SRC_CMD_NEXT_SRC = 2
+SRC_CMD_PREV_SRC = 3
+SRC_CMD_SET_SRC = 4
+
+SOURCE_MAP = {
+    'A1': SOURCE_A1,
+    'A2': SOURCE_A2,
+    'A3': SOURCE_A3,
+    'A4': SOURCE_A4,
+    'A1 Balanced': SOURCE_BAL,
+    'D1': SOURCE_D1,
+    'D2': SOURCE_D2,
+    'D3': SOURCE_D3,
+    'MP3': SOURCE_MP3,
+    'Bluetooth': SOURCE_BT,
+    'USB': SOURCE_USB
+}
+
 # Serial message
 class cambridge_cxa61_data (object):
 
@@ -121,9 +140,10 @@ CXA61_IR_CONFIG = {
 @driver("cambridge_cxa61")
 class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
 
-    def __init__(self, serial_port, ir_gpio_pin):
+    def __init__(self, serial_port, ir_gpio_pin, tv_source=None):
         # self.serial_init(serial_port, baudrate=9600, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
         self.ir_init(CXA61_IR_CONFIG, ir_gpio_pin)
+        self.tv_source = tv_source
 
     def serial_send(self, *args):
         pass
@@ -145,6 +165,8 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
 
     def power_on(self):
         self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_PWR, 1).serialize())
+        if self.tv_source is not None:
+            self.serial_send(cambridge_cxa61(GROUP_SRC_CMD, SRC_CMD_SET_SRC, SOURCE_MAP[self.tv_source]))
 
     def power_off(self):
         self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_PWR, 0).serialize())

@@ -10,7 +10,7 @@ class SerialDeviceMixin (object):
         self._serial.write(data)
     
     def serial_recv(self, size=1):
-        self._serial.read(size)
+        return self._serial.read(size)
 
 
 class AbstractSerialDevice (SerialDeviceMixin, AbstractDevice):

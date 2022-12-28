@@ -7,6 +7,7 @@ from .driver.cambridge_cxa61 import cambridge_cxa61
 from .driver.registry import driver_registry
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 SYSTEM_AUDIO_MODE_REQUEST = 0x70
 SET_SYSTEM_AUDIO_MODE = 0x72
@@ -26,7 +27,7 @@ class cec2rs232:
         
     def _init_callback(self, *args, **kwargs):
         self._address = self._adapter.get_logical_address()
-        logging.info("ready")
+        logger.info("ready")
 
     def _handle_keypress(self, att):
         if att == const.KEY_VOLUME_DOWN:
@@ -40,40 +41,49 @@ class cec2rs232:
         elif att == const.KEY_MUTE_OFF:
             self._driver.mute_off()
         else:
-            logging.debug("unhandled keypress: {att}")
+            logger.debug("unhandled keypress: {att}")
 
     def _handle_command(self, raw):
-        cmd = commands.CecCommand(raw[3:])
-        if cmd.src == const.ADDR_TV:
-            if cmd.dst in (self._address, const.ADDR_BROADCAST):
-                if cmd.cmd == const.CMD_KEY_PRESS:
-                    self._handle_keypress(cmd.att[0])
-                elif cmd.cmd == const.CMD_POWER_STATUS[0]:
-                    power = self._driver.get_power_status()
-                    reply = commands.CecCommand(const.CMD_POWER_STATUS[1], cmd.src, self._address, [0 if power else 1])
-                    self._adapter.transmit(reply)
-                elif cmd.cmd == SYSTEM_AUDIO_MODE_REQUEST:
-                    self._driver.power_on()
-                    reply = commands.CecCommand(SET_SYSTEM_AUDIO_MODE, cmd.src, self._address, [1])
-                    self._adapter.transmit(reply)
-                elif cmd.cmd == const.CMD_AUDIO_MODE_STATUS[0]:
-                    reply = commands.CecCommand(const.CMD_AUDIO_MODE_STATUS[1], cmd.src, self._address, [1])
-                    self._adapter.transmit(reply)
-                elif cmd.cmd == const.CMD_AUDIO_STATUS[0]:
-                    mute, volume = self._driver.get_audio_status()
-                    reply = commands.CecCommand(const.CMD_AUDIO_STATUS[1], cmd.src, self._address, [(mute << 7 | volume)])
-                    self._adapter.transmit(reply)
-                elif cmd.cmd == const.CMD_STANDBY:
-                    self._driver.power_off()
-                else:
-                    logging.debug(f"unhandled command: {raw} - 0x{cmd.cmd:02x} att: {cmd.att}")
+        try:
+            cmd = commands.CecCommand(raw[3:])
+            if cmd.src == const.ADDR_TV:
+                if cmd.dst in (self._address, const.ADDR_BROADCAST):
+                    if cmd.cmd == const.CMD_KEY_PRESS:
+                        self._handle_keypress(cmd.att[0])
+                    elif cmd.cmd == const.CMD_POWER_STATUS[0]:
+                        logger.info('cmd_power_status')
+                        power = self._driver.get_power_status()
+                        reply = commands.CecCommand(const.CMD_POWER_STATUS[1], cmd.src, self._address, [0 if power else 1])
+                        self._adapter.transmit(reply)
+                    elif cmd.cmd == SYSTEM_AUDIO_MODE_REQUEST:
+                        logger.info('system_audio_mode_request')
+                        self._driver.power_on()
+                        reply = commands.CecCommand(SET_SYSTEM_AUDIO_MODE, cmd.src, self._address, [1])
+                        self._adapter.transmit(reply)
+                    elif cmd.cmd == const.CMD_AUDIO_MODE_STATUS[0]:
+                        logger.info('cmd_audio_mode_status')
+                        reply = commands.CecCommand(const.CMD_AUDIO_MODE_STATUS[1], cmd.src, self._address, [1])
+                        self._adapter.transmit(reply)
+                    elif cmd.cmd == const.CMD_AUDIO_STATUS[0]:
+                        logger.info('cmd_audio_status')
+                        mute, volume = self._driver.get_audio_status()
+                        reply = commands.CecCommand(const.CMD_AUDIO_STATUS[1], cmd.src, self._address, [(mute << 7 | volume)])
+                        self._adapter.transmit(reply)
+                    elif cmd.cmd == const.CMD_STANDBY:
+                        logger.info('cmd_standby')
+                        self._driver.power_off()
+                    else:
+                        logger.debug(f"unhandled command: {raw} - 0x{cmd.cmd:02x} att: {cmd.att}")
+        except Exception as e:
+            logger.error("error in handle_command:")
+            logger.exception(e)
     
     def run(self):
         task = self._adapter.init(self._init_callback)
         try:
             self._loop.run_forever()
         except Exception as e:
-            logging.exception(e)
+            logger.exception(e)
         self._loop.close()
 
 def main():

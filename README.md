@@ -61,4 +61,4 @@ Other dependencies should be brought in automatically by pip.
 
 ## License and attribution
 
-Released under the terms of the [MIT License](LICENSE.md)
+Released under the terms of the [MIT License](LICENSE.md).

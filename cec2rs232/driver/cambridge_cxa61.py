@@ -1,9 +1,12 @@
 import re
 import serial
+import logging
 from .base_serial import SerialDeviceMixin
 from .base_ir import IrDeviceMixin
 from .base import AbstractDevice
 from .registry import driver
+
+logger = logging.getLogger(__name__)
 
 # Serial protocol constants
 # https://techsupport.cambridgeaudio.com/hc/en-us/article_attachments/360011247357/AP366462_CXA61_CXA81_Serial_Control_Protocol__1_.pdf
@@ -21,17 +24,17 @@ ERR_CMD = 2
 ERR_DATA = 3
 ERR_AVAIL = 4
 
-SOURCE_A1 = 0
-SOURCE_A2 = 1
-SOURCE_A3 = 2
-SOURCE_A4 = 3
-SOURCE_D1 = 4
-SOURCE_D2 = 5
-SOURCE_D3 = 6
-SOURCE_MP3 = 10
-SOURCE_BT = 14
-SOURCE_USB = 16
-SOURCE_BAL = 20
+SOURCE_A1 = "00"
+SOURCE_A2 = "01"
+SOURCE_A3 = "02"
+SOURCE_A4 = "03"
+SOURCE_D1 = "04"
+SOURCE_D2 = "05"
+SOURCE_D3 = "06"
+SOURCE_MP3 = "10"
+SOURCE_BT = "14"
+SOURCE_USB = "16"
+SOURCE_BAL = "20"
 
 AMP_CMD_GET_PWR = 1
 AMP_CMD_SET_PWR = 2
@@ -72,20 +75,18 @@ class cambridge_cxa61_data (object):
     
     @classmethod
     def deserialize(cls, data):
-        match = pattern.fullmatch(data)
+        match = cls.pattern.fullmatch(data)
         if match is None:
             return None
         data = match.group(3)
-        if len(data):
-            data = int(data)
-        return cls(int(match.group(1)), int(match.group(2)), data)
+        return cls(int(match.group(1)), int(match.group(2)), match.group(3))
     
     def serialize(self):
         res = f"#{self._group:02d},{self._number:02d}"
         if self._data is not None:
-            res += f",{self._data:02d}"
+            res += f",{self._data:s}"
         res += "\r"
-        return res
+        return res.encode()
     
     @property
     def group(self):
@@ -141,12 +142,13 @@ CXA61_IR_CONFIG = {
 class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
 
     def __init__(self, serial_port, ir_gpio_pin, tv_source=None):
-        # self.serial_init(serial_port, baudrate=9600, bytesize=serial.EIGHTBITS, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
+        self.serial_init(serial_port,
+                         baudrate=9600,
+                         bytesize=serial.EIGHTBITS,
+                         parity=serial.PARITY_NONE,
+                         stopbits=serial.STOPBITS_ONE)
         self.ir_init(CXA61_IR_CONFIG, ir_gpio_pin)
         self.tv_source = tv_source
-
-    def serial_send(self, *args):
-        pass
 
     def get_name(self):
         return "CXA61/81"
@@ -158,37 +160,54 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
         self.ir_send("volume_down")
 
     def mute_on(self):
-        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_MUT, 1).serialize())
+        self._clear()
+        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_MUT, "1").serialize())
+        self._read_message()
 
     def mute_off(self):
-        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_MUT, 0).serialize())
+        self._clear()
+        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_MUT, "0").serialize())
+        self._read_message()
 
     def power_on(self):
-        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_PWR, 1).serialize())
+        self._clear()
+        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_PWR, "1").serialize())
+        while not self.get_power_status():
+            pass
         if self.tv_source is not None:
-            self.serial_send(cambridge_cxa61(GROUP_SRC_CMD, SRC_CMD_SET_SRC, SOURCE_MAP[self.tv_source]))
+            self.serial_send(cambridge_cxa61_data(GROUP_SRC_CMD, SRC_CMD_SET_SRC, SOURCE_MAP[self.tv_source]).serialize())
+            self._read_message()
 
     def power_off(self):
-        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_PWR, 0).serialize())
+        self._clear()
+        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_PWR, "0").serialize())
+        self._read_message()
     
     def get_audio_status(self):
+        self._clear()
         self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_GET_MUT).serialize())
         reply = self._read_message()
         if reply is None or reply.group != GROUP_AMP_REP or reply.number != AMP_CMD_GET_MUT:
-            return None, 64
-        return (reply.data == 1), 64
+            return False, 64
+        return (reply.data == "1"), 64
     
     def get_power_status(self):
+        self._clear()
         self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_GET_PWR).serialize())
         reply = self._read_message()
         if reply is None or reply.group != GROUP_AMP_REP or reply.number != AMP_CMD_GET_PWR:
-            return None
-        return reply.data == 1
+            return False
+        return reply.data == "1"
 
     def _read_message(self):
-        buffer = ""
-        match = None
-        while match is None:
-            buffer += self.serial_recv()
-            match = cambridge_cxa61_data.pattern.fullmatch(buffer)
-        return cambridge_cxa61_data.deserialize(buffer)
+        char = None
+        while char != b'#':
+            char = self.serial_recv(size=1)
+        buffer = char
+        while char != b'\r':
+            char = self.serial_recv(size=1)
+            buffer += char
+        return cambridge_cxa61_data.deserialize( buffer.decode())
+
+    def _clear(self):
+        self._serial.reset_input_buffer()

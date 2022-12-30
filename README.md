@@ -11,9 +11,27 @@ as you would a dedicated home theater receiver.
 RS-232 and IR controls are supported. RS-232 requires a USB adapter, while IR can be
 controlled via GPIO.
 
-## Configuration
+## Installation
 
-Copy `cec2rs232.example.json` to `/etc/cec2rs232/cec2rs232.json`. Edit it 
+It is assumed that the Raspberry Pi is not doing anything important so it is suitable
+to install cec2rs232 globally and run it as root. The package is available from pip:
+
+```
+sudo pip install cec2rs232
+```
+
+Copy `cec2rs232.example.json` to `/etc/cec2rs232/cec2rs232.json`. Edit it as needed.
+
+Then you can have it run as a service using the provided systemd file:
+
+```
+sudo cp systemd/cec2rs232.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable cec2rs232
+sudo systemctl start cec2rs232
+```
+
+This will start the process and ensure it starts again at boot.
 
 ## Supported televisions
 

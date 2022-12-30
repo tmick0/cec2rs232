@@ -1,0 +1,9 @@
+[Unit]
+Description=cec2rs232
+
+[Service]
+ExecStart=cec2rs232 /etc/cec2rs232/cec2rs232.json
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

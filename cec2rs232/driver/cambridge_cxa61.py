@@ -149,22 +149,31 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
                          stopbits=serial.STOPBITS_ONE)
         self.ir_init(CXA61_IR_CONFIG, ir_gpio_pin)
         self.tv_source = tv_source
+        self.power_status = None
 
     def get_name(self):
         return "CXA61/81"
 
     def volume_up(self):
+        if not self.get_power_status(True):
+            self.power_on()
         self.ir_send("volume_up")
 
     def volume_down(self):
+        if not self.get_power_status(True):
+            self.power_on()
         self.ir_send("volume_down")
 
     def mute_on(self):
+        if not self.get_power_status(True):
+            self.power_on()
         self._clear()
         self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_MUT, "1").serialize())
         self._read_message()
 
     def mute_off(self):
+        if not self.get_power_status(True):
+            self.power_on()
         self._clear()
         self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_MUT, "0").serialize())
         self._read_message()
@@ -182,8 +191,11 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
         self._clear()
         self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_PWR, "0").serialize())
         self._read_message()
+        self.power_status = False
     
     def get_audio_status(self):
+        if not self.get_power_status(True):
+            self.power_on()
         self._clear()
         self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_GET_MUT).serialize())
         reply = self._read_message()
@@ -191,13 +203,16 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
             return False, 64
         return (reply.data == "1"), 64
     
-    def get_power_status(self):
+    def get_power_status(self, use_cache=False):
+        if use_cache and self.power_status is not None:
+            return self.power_status
         self._clear()
         self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_GET_PWR).serialize())
         reply = self._read_message()
         if reply is None or reply.group != GROUP_AMP_REP or reply.number != AMP_CMD_GET_PWR:
             return False
-        return reply.data == "1"
+        self.power_status = reply.data == "1"
+        return self.power_status
 
     def _read_message(self):
         char = None

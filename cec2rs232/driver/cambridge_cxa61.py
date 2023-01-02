@@ -155,16 +155,19 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
         return "CXA61/81"
 
     def volume_up(self):
+        self._clear()
         if not self.get_power_status(True):
             self.power_on()
         self.ir_send("volume_up")
 
     def volume_down(self):
+        self._clear()
         if not self.get_power_status(True):
             self.power_on()
         self.ir_send("volume_down")
 
     def mute_on(self):
+        self._clear()
         if not self.get_power_status(True):
             self.power_on()
         self._clear()
@@ -172,6 +175,7 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
         self._read_message()
 
     def mute_off(self):
+        self._clear()
         if not self.get_power_status(True):
             self.power_on()
         self._clear()
@@ -194,6 +198,7 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
         self.power_status = False
     
     def get_audio_status(self):
+        self._clear()
         if not self.get_power_status(True):
             self.power_on()
         self._clear()
@@ -222,7 +227,13 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
         while char != b'\r':
             char = self.serial_recv(size=1)
             buffer += char
-        return cambridge_cxa61_data.deserialize( buffer.decode())
+        return cambridge_cxa61_data.deserialize(buffer.decode())
+    
+    def _process_background_message(self, message):
+        if message.group == GROUP_AMP_REP and message.number == AMP_CMD_GET_PWR:
+            logger.info(f"power status changed: {message.data}")
+            self.power_status = message.data == "1"
 
     def _clear(self):
-        self._serial.reset_input_buffer()
+        while self._serial.in_waiting:
+            self._process_background_message(self._read_message())

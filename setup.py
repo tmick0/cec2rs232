@@ -3,7 +3,7 @@ from pathlib import Path
 
 setup(
     name="cec2rs232",
-    version="0.1",
+    version="0.1.1",
     author="travis mick",
     author_email="root@lo.calho.st",
     description="Enables a Raspberry Pi to act as a bridge between CEC and RS-232 or IR",

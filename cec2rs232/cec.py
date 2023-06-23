@@ -1,7 +1,6 @@
 import logging
 from pycec import cec, const, commands
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 SYSTEM_AUDIO_MODE_REQUEST = 0x70

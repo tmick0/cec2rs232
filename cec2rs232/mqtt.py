@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class mqtt_interface (object):
 
-    def __init__(self, driver, loop, server, port, username, password, name, discovery):
+    def __init__(self, driver, loop, server, port, username, password, name, topic, discovery):
         self.driver = driver
         self.loop = loop
         self.name = name
@@ -28,7 +28,7 @@ class mqtt_interface (object):
         self.client.on_message = self.on_message
         self.client.on_disconnect = self.on_disconnect
 
-        self.prefix = f"homeassistant/button/{name}"
+        self.topic = topic
         self.commands = {
             "volume_up": driver.volume_up,
             "volume_down": driver.volume_down,
@@ -42,17 +42,30 @@ class mqtt_interface (object):
         self.client.username_pw_set(username, password)
     
     def connect(self):
-        self.client.connect(self.server, self.port)
+        logger.info(f"connecting to {self.server}:{self.port}")
+        try:
+            self.client.connect(self.server, self.port)
+        except Exception as e:
+            logger.warning("connection failed, will retry")
+            logger.exception(e)
+
+            async def retry_connect():
+                await asyncio.sleep(5) # hardcoded 5 second retry for now
+                self.connect()
+
+            self.reconnect_task = self.loop.create_task(retry_connect())
+
 
     async def run(self):
         self.connect()
 
     def on_connect(self, client, userdata, flags, rc):
         if self.discovery:
+            prefix = f"homeassistant/button/{self.name}"
             for o in self.commands.keys():
                 config = {
                     "name": f"{self.name} {o}",
-                    "command_topic": f"{self.prefix}/command",
+                    "command_topic": f"{self.topic}/command",
                     "payload_press": o,
                     "unique_id": f"{self.name}_{o}",
                     "device": {
@@ -60,9 +73,9 @@ class mqtt_interface (object):
                         "identifiers": [self.name]
                     }
                 }
-                self.client.publish(f"{self.prefix}/{o}/config", json.dumps(config))
+                self.client.publish(f"{prefix}/{o}/config", json.dumps(config))
                 logger.info(f"publishing {o} entity")
-        self.client.subscribe(f"{self.prefix}/command")
+        self.client.subscribe(f"{self.topic}/command")
         logger.info(f"connected to {self.server}")
 
     def on_message(self, client, userdata, msg):
@@ -72,7 +85,7 @@ class mqtt_interface (object):
             self.commands[command]()
 
     def on_disconnect(self, client, userdata, rc):
-        logger.info(f"disconnected: {userdata} {rc}")
+        logger.info(f"connection lost, reconnecting...")
         self.connect()
 
     def on_socket_open(self, client, userdata, sock):

@@ -42,24 +42,34 @@ class mqtt_interface (object):
         self.client.username_pw_set(username, password)
     
     def connect(self):
+        self.connect_success = False
         logger.info(f"connecting to {self.server}:{self.port}")
+
+        async def retry_connect(delay=True):
+            if delay:
+                await asyncio.sleep(5) # hardcoded 5 second retry for now
+            self.connect()
+
+        async def check_success():
+            await asyncio.sleep(5) # timeout before assuming connection failed
+            if not self.connect_success:
+                self.reconnect_task = self.loop.create_task(retry_connect(False))
+
         try:
             self.client.connect(self.server, self.port)
         except Exception as e:
             logger.warning("connection failed, will retry")
             logger.exception(e)
-
-            async def retry_connect():
-                await asyncio.sleep(5) # hardcoded 5 second retry for now
-                self.connect()
-
             self.reconnect_task = self.loop.create_task(retry_connect())
+            return
 
+        self.reconnect_task = self.loop.create_task(check_success())
 
     async def run(self):
         self.connect()
 
     def on_connect(self, client, userdata, flags, rc):
+        self.connect_success = True
         if self.discovery:
             prefix = f"homeassistant/button/{self.name}"
             for o in self.commands.keys():

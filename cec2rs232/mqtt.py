@@ -1,10 +1,8 @@
 import asyncio
-import socket
 import logging
 import json
-from uuid import uuid4
 
-import paho.mqtt.client as mqtt
+import aiomqtt
 
 logger = logging.getLogger(__name__)
 
@@ -18,15 +16,8 @@ class mqtt_interface (object):
 
         self.server = server
         self.port = port
-
-        self.client = mqtt.Client(client_id=uuid4().hex)
-        self.client.on_socket_open = self.on_socket_open
-        self.client.on_socket_close = self.on_socket_close
-        self.client.on_socket_register_write = self.on_socket_register_write
-        self.client.on_socket_unregister_write = self.on_socket_unregister_write        
-        self.client.on_connect = self.on_connect
-        self.client.on_message = self.on_message
-        self.client.on_disconnect = self.on_disconnect
+        self.username = username
+        self.password = password
 
         self.topic = topic
         self.commands = {
@@ -38,87 +29,60 @@ class mqtt_interface (object):
             "power_on": driver.power_on,
             "power_off": driver.power_off
         }
-        
-        self.client.username_pw_set(username, password)
     
-    def connect(self):
-        self.connect_success = False
+    async def connect(self):
         logger.info(f"connecting to {self.server}:{self.port}")
 
-        async def retry_connect(delay=True):
-            if delay:
-                await asyncio.sleep(5) # hardcoded 5 second retry for now
-            self.connect()
+        async def advertise_loop():
+            while True:
+                await self.advertise(client)
+                await asyncio.sleep(15)
 
-        async def check_success():
-            await asyncio.sleep(5) # timeout before assuming connection failed
-            if not self.connect_success:
-                self.reconnect_task = self.loop.create_task(retry_connect(False))
+        client = aiomqtt.Client(self.server, port=self.port, username=self.username, password=self.password)
 
-        try:
-            self.client.connect(self.server, self.port)
-        except Exception as e:
-            logger.warning("connection failed, will retry")
-            logger.exception(e)
-            self.reconnect_task = self.loop.create_task(retry_connect())
-            return
+        while True:
+            advertise_task = None
+            try:
+                async with client:
+                    await client.subscribe(f"{self.topic}/command", qos=1)
+                    logger.info(f"connected to {self.server}")
+                    if self.discovery:
+                        advertise_task = self.loop.create_task(advertise_loop())
+                    async for msg in client.messages:
+                        logger.info(msg.payload)
+                        command = msg.payload.decode()
+                        if command in self.commands:
+                            self.commands[command]()
+                        
+            except aiomqtt.MqttError as e:
+                if advertise_task:
+                    advertise_task.cancel()
+                    try:
+                        await advertise_task
+                    except asyncio.CancelledError:
+                        pass
+                logger.warning("connection failed or lost, will retry")
+                logger.exception(e)
+                await asyncio.sleep(5)
 
-        self.reconnect_task = self.loop.create_task(check_success())
 
     async def run(self):
-        self.connect()
+        await self.connect() 
 
-    def on_connect(self, client, userdata, flags, rc):
-        self.connect_success = True
-        if self.discovery:
-            prefix = f"homeassistant/button/{self.name}"
-            for o in self.commands.keys():
-                config = {
-                    "name": f"{self.name} {o}",
-                    "command_topic": f"{self.topic}/command",
-                    "payload_press": o,
-                    "unique_id": f"{self.name}_{o}",
-                    "device": {
-                        "name": self.name,
-                        "identifiers": [self.name]
-                    }
+    async def advertise(self, client):
+        prefix = f"homeassistant/button/{self.name}"
+        for o in self.commands.keys():
+            config = {
+                "name": f"{self.name} {o}",
+                "command_topic": f"{self.topic}/command",
+                "payload_press": o,
+                "unique_id": f"{self.name}_{o}",
+                "device": {
+                    "name": self.name,
+                    "identifiers": [self.name]
                 }
-                self.client.publish(f"{prefix}/{o}/config", json.dumps(config))
-                logger.info(f"publishing {o} entity")
-        self.client.subscribe(f"{self.topic}/command")
-        logger.info(f"connected to {self.server}")
+            }
+            logger.info(f"publishing {o} entity")
+            await client.publish(f"{prefix}/{o}/config", payload=json.dumps(config), qos=1)
 
-    def on_message(self, client, userdata, msg):
-        logger.info(msg.payload)
-        command = msg.payload.decode()
-        if command in self.commands:
-            self.commands[command]()
 
-    def on_disconnect(self, client, userdata, rc):
-        logger.info(f"connection lost, reconnecting...")
-        self.connect()
-
-    def on_socket_open(self, client, userdata, sock):
-        def cb():
-            client.loop_read()
-        self.loop.add_reader(sock, cb)
-        self.misc = self.loop.create_task(self.misc_loop())
-
-    def on_socket_close(self, client, userdata, sock):
-        self.loop.remove_reader(sock)
-        self.misc.cancel()
-
-    def on_socket_register_write(self, client, userdata, sock):
-        def cb():
-            client.loop_write()
-        self.loop.add_writer(sock, cb)
-
-    def on_socket_unregister_write(self, client, userdata, sock):
-        self.loop.remove_writer(sock)
-
-    async def misc_loop(self):
-        while self.client.loop_misc() == mqtt.MQTT_ERR_SUCCESS:
-            try:
-                await asyncio.sleep(1)
-            except asyncio.CancelledError:
-                break

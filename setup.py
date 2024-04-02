@@ -12,7 +12,7 @@ setup(
     license="MIT",
     url="https://github.com/tmick0/cec2rs232",
     python_requires='>=3.9',
-    install_requires=["pycec", "pyserial", "piir", "paho-mqtt"],
+    install_requires=["pycec", "pyserial", "piir", "aiomqtt"],
     packages=find_packages(),
     entry_points={
         'console_scripts': ['cec2rs232=cec2rs232.main:main'],

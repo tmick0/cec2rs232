@@ -67,6 +67,30 @@ not be connected.
 
 Please feel free to make a pull request to add support for other devices.
 
+## MQTT
+
+The controls for the connected audio device can also be exposed over MQTT, with the intention
+of being controlled from Home Assistant.
+
+To enable this functionality, add an `"mqtt"` section to the configuration file:
+
+```
+"mqtt": {
+    "server": "homeassistant.local",
+    "port": 1883,
+    "username": "mqtt",
+    "password": "password",
+    "name": "cxa61",
+    "topic": "homeassistant/button/cxa61",
+    "discovery": true
+}
+```
+
+Each supported input (e.g., power_on, power_off, volume_up, volume_down, etc...) is exposed as a separate button entity, and
+when pressed will execute that command as if it were pressed on a remote control.
+
+If not using Home Assistant, disable `discovery`. Then, you can manually send commands to the chosen topic.
+
 ## Dependencies
 
 Bindings for libCEC are required: `sudo apt install python3-cec`.

@@ -1,8 +1,10 @@
 {
-    "device": "cambridge_cxa61",
-    "parameters": {
-        "serial_port": "/dev/ttyUSB0",
-        "ir_gpio_pin": 4,
-        "tv_source": "D2"
+    "device": {
+        "driver": "cambridge_cxa61",
+        "parameters": {
+            "serial_port": "/dev/ttyUSB0",
+            "ir_gpio_pin": 4,
+            "tv_source": "D2"
+        }
     }
 }

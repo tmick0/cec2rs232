@@ -33,9 +33,11 @@ class mqtt_interface (object):
     async def connect(self):
         logger.info(f"connecting to {self.server}:{self.port}")
 
-        async def advertise_loop():
+        async def subscribe_loop(advertise):
             while True:
-                await self.advertise(client)
+                await client.subscribe(f"{self.topic}/command", qos=1, timeout=5)
+                if advertise:
+                    await self.advertise(client)
                 await asyncio.sleep(15)
 
         client = aiomqtt.Client(self.server, port=self.port, username=self.username, password=self.password)
@@ -44,10 +46,8 @@ class mqtt_interface (object):
             advertise_task = None
             try:
                 async with client:
-                    await client.subscribe(f"{self.topic}/command", qos=1)
                     logger.info(f"connected to {self.server}")
-                    if self.discovery:
-                        advertise_task = self.loop.create_task(advertise_loop())
+                    advertise_task = self.loop.create_task(subscribe_loop(self.discovery))
                     async for msg in client.messages:
                         logger.info(msg.payload)
                         command = msg.payload.decode()
@@ -73,7 +73,7 @@ class mqtt_interface (object):
         prefix = f"homeassistant/button/{self.name}"
         for o in self.commands.keys():
             config = {
-                "name": f"{self.name} {o}",
+                "name": f"{o}",
                 "command_topic": f"{self.topic}/command",
                 "payload_press": o,
                 "unique_id": f"{self.name}_{o}",
@@ -82,7 +82,6 @@ class mqtt_interface (object):
                     "identifiers": [self.name]
                 }
             }
-            logger.info(f"publishing {o} entity")
-            await client.publish(f"{prefix}/{o}/config", payload=json.dumps(config), qos=1)
+            await client.publish(f"{prefix}/{o}/config", payload=json.dumps(config), qos=1, timeout=5)
 
 

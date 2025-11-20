@@ -39,7 +39,7 @@ def main():
     
     loop = asyncio.new_event_loop()
     driver = driver_registry[config["device"]["driver"]](**config["device"]["parameters"])
-    cec = cec_interface(driver, loop)
+    cec = cec_interface(driver, loop, **config.get("cec", {}))
 
     if "mqtt" in config:
         mqtt = mqtt_interface(driver, loop, **config["mqtt"])

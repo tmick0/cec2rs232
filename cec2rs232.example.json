@@ -6,5 +6,9 @@
             "ir_gpio_pin": 4,
             "tv_source": "D2"
         }
+    },
+    "cec": {
+        "echo_device_keypress": false,
+        "ignore_device_keypress": true
     }
 }

@@ -8,16 +8,26 @@ SET_SYSTEM_AUDIO_MODE = 0x72
 
 CMD_AUDIO_MODE_STATUS_REQ, CMD_AUDIO_MODE_STATUS_REP = const.CMD_AUDIO_MODE_STATUS
 
+KEYS_ACTIONS = {
+    const.KEY_VOLUME_DOWN: "volume_down",
+    const.KEY_VOLUME_UP: "volume_up",
+    const.KEY_MUTE_TOGGLE: "toggle_mute",
+    const.KEY_MUTE_ON: "mute_on",
+    const.KEY_MUTE_OFF: "mute_off",
+}
+
 
 class cec_interface (object):
 
-    def __init__(self, driver, loop):
+    def __init__(self, driver, loop, echo_device_keypress=False, ignore_device_keypress=False):
         self._driver = driver
         self._adapter = cec.CecAdapter(driver.get_name(), device_type=const.TYPE_AUDIO, activate_source=False)
         self._adapter.set_event_loop(loop)
         self._adapter.set_command_callback(self._handle_command)
         self._address = None
         self._power = False
+        self._echo_device_keypress = echo_device_keypress
+        self._ignore_device_keypress = ignore_device_keypress
     
     def init(self):
         return self._adapter.init(self._init_callback)
@@ -25,18 +35,13 @@ class cec_interface (object):
     def _init_callback(self, *args, **kwargs):
         self._address = self._adapter.get_logical_address()
         logger.info("ready")
+    
+    def _is_recognized_keypress(self, att):
+        return att in KEYS_ACTIONS
 
     def _handle_keypress(self, att):
-        if att == const.KEY_VOLUME_DOWN:
-            self._driver.volume_down()
-        elif att == const.KEY_VOLUME_UP:
-            self._driver.volume_up()
-        elif att == const.KEY_MUTE_TOGGLE:
-            self._driver.toggle_mute()
-        elif att == const.KEY_MUTE_ON:
-            self._driver.mute_on()
-        elif att == const.KEY_MUTE_OFF:
-            self._driver.mute_off()
+        if self._is_recognized_keypress(att):
+            getattr(self._driver, KEYS_ACTIONS[att])()
         else:
             logger.debug("unhandled keypress: {att}")
 
@@ -71,6 +76,14 @@ class cec_interface (object):
                         self._driver.power_off()
                     else:
                         logger.debug(f"unhandled command: {raw} - 0x{cmd.cmd:02x} att: {cmd.att}")
+            elif cmd.src in (const.ADDR_PLAYBACKDEVICE1, const.ADDR_PLAYBACKDEVICE2, const.ADDR_PLAYBACKDEVICE3):
+                if cmd.dst in (self._address, const.ADDR_BROADCAST):
+                    if cmd.cmd == const.CMD_KEY_PRESS and self._is_recognized_keypress(cmd.att[0]):
+                        if not self._ignore_device_keypress:
+                            self._handle_keypress(cmd.att[0])
+                        if self._echo_device_keypress:
+                            reply = commands.CecCommand(const.CMD_KEY_PRESS, const.ADDR_TV, self._address, [cmd.att[0]])
+                            self._adapter.transmit(reply)
         except Exception as e:
             logger.error("error in handle_command:")
             logger.exception(e)

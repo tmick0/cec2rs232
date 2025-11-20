@@ -67,6 +67,24 @@ not be connected.
 
 Please feel free to make a pull request to add support for other devices.
 
+## CEC behavior options
+
+Some options to handle device CEC implementation quirks are supported.
+
+| Name                     | Type    | Description                                                    |
+|--------------------------|---------|----------------------------------------------------------------|
+| `echo_device_keypress`   | boolean | Default false. If true, resends playback device audio buttons. |
+| `ignore_device_keypress` | boolean | Default false. If true, ignores playback device keypresses.    |
+
+The two flags are independent, i.e., `ignore` does not disable `echo`.
+
+The `echo` flag is helpful if your playback device sends broadcast CEC volume commands but your TV does not
+display visual feedback in that case. The command will be repeated with the TV as a specific destination.
+
+The `ignore` flag is helpful in two cases. One, if you have a playback device which sends spurious keypresses
+that you wish two ignore. Second, if enabling the `echo` behavior has unintended consequences, such as
+the TV itself echoing the command to the audio device again (effectively double-pressing it).
+
 ## MQTT
 
 The controls for the connected audio device can also be exposed over MQTT, with the intention

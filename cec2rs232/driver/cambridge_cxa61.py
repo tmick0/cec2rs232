@@ -1,6 +1,7 @@
 import re
 import serial
 import logging
+import threading
 from .base_serial import SerialDeviceMixin
 from .base_ir import IrDeviceMixin
 from .base import AbstractDevice
@@ -9,7 +10,7 @@ from .registry import driver
 logger = logging.getLogger(__name__)
 
 # Serial protocol constants
-# https://techsupport.cambridgeaudio.com/hc/en-us/article_attachments/360011247357/AP366462_CXA61_CXA81_Serial_Control_Protocol__1_.pdf
+# https://www.cambridgeaudio.com/sites/default/files/compliance/doc/AP366462%20CXA61%20CXA81%20Serial%20Control%20Protocol%20%281%29.pdf
 
 GROUP_ERROR = 0
 GROUP_AMP_CMD = 1
@@ -139,9 +140,10 @@ CXA61_IR_CONFIG = {
 
 
 @driver("cambridge_cxa61")
-class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
+class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin, threading.Thread):
 
     def __init__(self, serial_port, ir_gpio_pin, tv_source=None):
+        threading.Thread.__init__(self)
         self.serial_init(serial_port,
                          baudrate=9600,
                          bytesize=serial.EIGHTBITS,
@@ -150,74 +152,96 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
         self.ir_init(CXA61_IR_CONFIG, ir_gpio_pin)
         self.tv_source = tv_source
         self.power_status = None
+        self.mute_status = None
+        self.input_status = None
+        self.power_update = threading.Event()
+        self.mute_update = threading.Event()
+        self.input_update = threading.Event()
+        self.start()
+    
+    def run(self):
+        while True:
+            try:
+                self._process_message(self._read_message())
+            except InterruptedError:
+                break
 
     def get_name(self):
         return "CXA61/81"
 
     def volume_up(self):
-        self._clear()
-        if not self.get_power_status(True):
-            self.power_on()
+        self._ensure_on()
         self.ir_send("volume_up")
 
     def volume_down(self):
-        self._clear()
-        if not self.get_power_status(True):
-            self.power_on()
+        self._ensure_on()
         self.ir_send("volume_down")
 
     def mute_on(self):
-        self._clear()
-        if not self.get_power_status(True):
-            self.power_on()
-        self._clear()
-        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_MUT, "1").serialize())
-        self._read_message()
+        self._ensure_on()
+        self._wait_for_event(
+            lambda: self.mute_status == True,
+            lambda: self._send(GROUP_AMP_CMD, AMP_CMD_SET_MUT, "1"),
+            self.mute_update)
 
     def mute_off(self):
-        self._clear()
-        if not self.get_power_status(True):
-            self.power_on()
-        self._clear()
-        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_MUT, "0").serialize())
-        self._read_message()
+        self._ensure_on()
+        self._wait_for_event(
+            lambda: self.mute_status == False,
+            lambda: self._send(GROUP_AMP_CMD, AMP_CMD_SET_MUT, "0"),
+            self.mute_update)
 
     def power_on(self):
-        self._clear()
-        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_PWR, "1").serialize())
-        while not self.get_power_status():
-            pass
-        if self.tv_source is not None:
-            self.serial_send(cambridge_cxa61_data(GROUP_SRC_CMD, SRC_CMD_SET_SRC, SOURCE_MAP[self.tv_source]).serialize())
-            self._read_message()
+        self._ensure_on()
+        self._set_source()
 
     def power_off(self):
-        self._clear()
-        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_SET_PWR, "0").serialize())
-        self._read_message()
-        self.power_status = False
-    
+        self._wait_for_event(
+            lambda: self.power_status == False,
+            lambda: self._send(GROUP_AMP_CMD, AMP_CMD_SET_PWR, "0"),
+            self.power_update)
+
     def get_audio_status(self):
-        self._clear()
-        if not self.get_power_status(True):
-            self.power_on()
-        self._clear()
-        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_GET_MUT).serialize())
-        reply = self._read_message()
-        if reply is None or reply.group != GROUP_AMP_REP or reply.number != AMP_CMD_GET_MUT:
-            return False, 64
-        return (reply.data == "1"), 64
-    
-    def get_power_status(self, use_cache=False):
-        if use_cache and self.power_status is not None:
-            return self.power_status
-        self._clear()
-        self.serial_send(cambridge_cxa61_data(GROUP_AMP_CMD, AMP_CMD_GET_PWR).serialize())
-        reply = self._read_message()
-        if reply is None or reply.group != GROUP_AMP_REP or reply.number != AMP_CMD_GET_PWR:
-            return False
-        self.power_status = reply.data == "1"
+        self._ensure_on()
+        self._wait_for_event(
+            lambda: self.mute_status is not None,
+            lambda: self._send(GROUP_AMP_CMD, AMP_CMD_GET_MUT),
+            self.mute_update)
+        return self.mute_status, 64
+
+    def get_power_status(self):
+        self._wait_for_event(
+            lambda: self.power_status is not None,
+            lambda: self._send(GROUP_AMP_CMD, AMP_CMD_GET_PWR),
+            self.power_update)
         return self.power_status
+
+    def _wait_for_event(self, predicate, action, event):
+        while not predicate():
+            event.clear()
+            action()
+            event.wait()
+
+    def _ensure_on(self):
+        if not self.power_status:
+            self._wait_for_event(
+                lambda: self.power_status,
+                lambda: self._send(GROUP_AMP_CMD, AMP_CMD_SET_PWR, "1"),
+                self.power_update)
+    
+    def _set_source(self):
+        if self.tv_source is not None:
+            encoded_src = SOURCE_MAP[self.tv_source]
+            if self.input_status != encoded_src:
+                self._wait_for_event(
+                    lambda: self.input_status == encoded_src,
+                    lambda: self._send(GROUP_SRC_CMD, SRC_CMD_SET_SRC, encoded_src),
+                    self.input_update)
+
+    def _send(self, *args):
+        data = cambridge_cxa61_data(*args).serialize()
+        logger.debug(f"serial send: {data}")
+        self.serial_send(data)
 
     def _read_message(self):
         char = None
@@ -227,13 +251,22 @@ class cambridge_cxa61 (AbstractDevice, SerialDeviceMixin, IrDeviceMixin):
         while char != b'\r':
             char = self.serial_recv(size=1)
             buffer += char
+        logger.debug(f"serial recv: {buffer}")
         return cambridge_cxa61_data.deserialize(buffer.decode())
-    
-    def _process_background_message(self, message):
+
+    def _process_message(self, message):
         if message.group == GROUP_AMP_REP and message.number == AMP_CMD_GET_PWR:
             logger.info(f"power status changed: {message.data}")
             self.power_status = message.data == "1"
+            self.power_update.set()
+        elif message.group == GROUP_AMP_REP and message.number == AMP_CMD_GET_MUT:
+            logger.info(f"mute status changed: {message.data}")
+            self.mute_status = message.data == "1"
+            self.mute_update.set()
+        elif message.group == GROUP_SRC_REP and message.number == SRC_CMD_GET_SRC:
+            logger.info(f"input changed: {message.data}")
+            self.input_status = message.data
+            self.input_update.set()
+        else:
+            logger.debug(f"unhandled message: {message.group} {message.number} {message.data}")
 
-    def _clear(self):
-        while self._serial.in_waiting:
-            self._process_background_message(self._read_message())

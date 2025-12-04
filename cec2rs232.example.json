@@ -10,5 +10,8 @@
     "cec": {
         "echo_device_keypress": false,
         "ignore_device_keypress": true
+    },
+    "logging": {
+        "level": "DEBUG"
     }
 }

@@ -6,8 +6,19 @@ from .driver.registry import driver_registry
 from .cec import cec_interface
 from .mqtt import mqtt_interface
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def init_logs(level="INFO"):
+    levels = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARN": logging.WARN,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+    logging.basicConfig(level=levels[level])
+
 
 class cec2rs232:
 
@@ -36,6 +47,8 @@ def main():
 
     with open(args.config_file, 'r') as fh:
         config = json.load(fh)
+    
+    init_logs(**config.get("logging", {}))
     
     loop = asyncio.new_event_loop()
     driver = driver_registry[config["device"]["driver"]](**config["device"]["parameters"])

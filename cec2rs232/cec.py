@@ -7,6 +7,9 @@ SYSTEM_AUDIO_MODE_REQUEST = 0x70
 SET_SYSTEM_AUDIO_MODE = 0x72
 
 CMD_AUDIO_MODE_STATUS_REQ, CMD_AUDIO_MODE_STATUS_REP = const.CMD_AUDIO_MODE_STATUS
+CMD_AUDIO_STATUS_REQ, CMD_AUDIO_STATUS_REP = const.CMD_AUDIO_STATUS
+CMD_POWER_STATUS_REQ, CMD_POWER_STATUS_REP = const.CMD_POWER_STATUS
+CMD_PHY_ADDR_REQ, CMD_PHY_ADDR_REP = const.CMD_PHYSICAL_ADDRESS
 
 KEYS_ACTIONS = {
     const.KEY_VOLUME_DOWN: "volume_down",
@@ -25,7 +28,6 @@ class cec_interface (object):
         self._adapter.set_event_loop(loop)
         self._adapter.set_command_callback(self._handle_command)
         self._address = None
-        self._power = False
         self._echo_device_keypress = echo_device_keypress
         self._ignore_device_keypress = ignore_device_keypress
     
@@ -52,24 +54,24 @@ class cec_interface (object):
                 if cmd.dst in (self._address, const.ADDR_BROADCAST):
                     if cmd.cmd == const.CMD_KEY_PRESS:
                         self._handle_keypress(cmd.att[0])
-                    elif cmd.cmd == const.CMD_POWER_STATUS[0]:
+                    elif cmd.cmd == CMD_POWER_STATUS_REQ:
                         logger.info('cmd_power_status')
                         power = self._driver.get_power_status()
-                        reply = commands.CecCommand(const.CMD_POWER_STATUS[1], cmd.src, self._address, [0 if power else 1])
+                        reply = commands.CecCommand(CMD_POWER_STATUS_REP, cmd.src, self._address, [0 if power else 1])
                         self._adapter.transmit(reply)
                     elif cmd.cmd == SYSTEM_AUDIO_MODE_REQUEST:
-                        logger.info('system_audio_mode_request')
-                        self._driver.power_on()
+                        logger.info(f'system_audio_mode_request: {cmd.att}')
                         reply = commands.CecCommand(SET_SYSTEM_AUDIO_MODE, cmd.src, self._address, [1])
                         self._adapter.transmit(reply)
-                    elif cmd.cmd == const.CMD_AUDIO_MODE_STATUS[0]:
+                        self._driver.power_on()
+                    elif cmd.cmd == CMD_AUDIO_MODE_STATUS_REQ:
                         logger.info('cmd_audio_mode_status')
-                        reply = commands.CecCommand(const.CMD_AUDIO_MODE_STATUS[1], cmd.src, self._address, [1])
+                        reply = commands.CecCommand(CMD_AUDIO_MODE_STATUS_REP, cmd.src, self._address, [1])
                         self._adapter.transmit(reply)
-                    elif cmd.cmd == const.CMD_AUDIO_STATUS[0]:
+                    elif cmd.cmd == CMD_AUDIO_STATUS_REQ:
                         logger.info('cmd_audio_status')
                         mute, volume = self._driver.get_audio_status()
-                        reply = commands.CecCommand(const.CMD_AUDIO_STATUS[1], cmd.src, self._address, [(mute << 7 | volume)])
+                        reply = commands.CecCommand(CMD_AUDIO_STATUS_REP, cmd.src, self._address, [(mute << 7 | volume)])
                         self._adapter.transmit(reply)
                     elif cmd.cmd == const.CMD_STANDBY:
                         logger.info('cmd_standby')
